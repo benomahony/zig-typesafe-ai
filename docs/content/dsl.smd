@@ -7,53 +7,33 @@
 
 # Shape of a call
 
-```zig
-const r = try client.ask(state, .{
-    .field_name = tai.noul(...) | tai.choice(...) | tai.score(...),
-    ...
-}, .{});
+`client.ask(state, questions, options)` takes:
 
-r.answers.field_name   // typed by the question
-r.usage                // input_tokens, output_tokens
-r.model()              // e.g. "jev-1.13.0"
-```
+- `state`: what the questions are about. Pass a string, or any value
+  `std.json` can serialize.
+- `questions`: a struct literal whose fields are built with `tai.noul`,
+  `tai.choice` or `tai.score`. Each field name becomes the question id sent to
+  the API, so ids are unique by construction.
+- `options`: per-call settings, covered [below]($link.ref('per-call-options')).
 
-Each field name becomes the question id sent to the API. Because field names
-are unique by construction, you can't send duplicate ids.
+It returns a `tai.Result` with the typed `answers`, token `usage` and
+`model()`, the versioned id that answered. The result owns no heap memory.
 
 # `tai.noul`: yes/no
 
-```zig
-.is_urgent = tai.noul("Does this convey urgency?"),
-```
+The answer is an `f64` from 0 (no) to 1 (yes). Use `.criteria(yes, no)` to
+say what each end of the scale means.
 
-The answer is an `f64` from 0 (no) to 1 (yes):
-
-```zig
-if (r.answers.is_urgent > 0.8) escalate();
-```
-
-Use `.criteria(yes, no)` to say what each end of the scale means:
-
-```zig
-.is_urgent = tai.noul("Does this convey urgency?")
-    .criteria("Explicitly time-sensitive", "No urgency expressed"),
-```
+[]($code.siteAsset('snippets/noul.zig').language('zig'))
 
 # `tai.choice`: pick one option
 
 Pass a struct literal that maps each option to its description. Use `null`
-for an option that needs no description.
+for an option that needs no description. `tai` generates an enum from the
+field names, so the `switch` below must handle every option.
 
-```zig
-.department = tai.choice("Which team should handle this?", .{
-    .billing = "Payments, invoicing, refunds",
-    .technical = "Bugs, outages, integrations",
-    .sales = null,
-}),
-```
+[]($code.siteAsset('snippets/choice.zig').language('zig'))
 
-`tai` generates an `enum { billing, technical, sales }` from the field names.
 The answer is a `tai.ChoiceResult` of that enum:
 
 | Field / method | Type | Meaning |
@@ -63,44 +43,23 @@ The answer is a `tai.ChoiceResult` of that enum:
 | `confidence` | `f64` | How certain the model is ([Confidence](https://docs.typesafe.ai/confidence)) |
 | `probability(option)` | `f64` | Shorthand for `probabilities.get(option)` |
 
-```zig
-switch (r.answers.department.choice) {
-    .billing => ...,
-    .technical => ...,
-    .sales => ...,
-}
-const p_sales = r.answers.department.probability(.sales);
-```
-
 If you already have an enum, pass the type itself. Each option is sent with a
 `null` description.
 
-```zig
-const Severity = enum { low, medium, high, critical };
-
-.severity = tai.choice("How severe is this?", Severity),
-// r.answers.severity.choice is a Severity
-```
+[]($code.siteAsset('snippets/choice-enum.zig').language('zig'))
 
 A choice must have between 1 and 255 options, and the compiler enforces that.
 
 # `tai.score`: rate against levels
 
-Pass a tuple of ordered level descriptions (2 to 10 levels):
+Pass a tuple of ordered level descriptions (2 to 10 levels), and `level()`
+returns an index:
 
-```zig
-.frustration = tai.score("How frustrated is the customer?", .{ "Calm", "Frustrated", "Very angry" }),
-```
+[]($code.siteAsset('snippets/score-levels.zig').language('zig'))
 
-or name the levels with a struct literal, so the answer is an enum:
+Or name the levels with a struct literal, and `level()` returns an enum:
 
-```zig
-.frustration = tai.score("How frustrated is the customer?", .{
-    .calm = "Calm",
-    .frustrated = "Frustrated",
-    .angry = "Very angry",
-}),
-```
+[]($code.siteAsset('snippets/score-named.zig').language('zig'))
 
 The answer is a `tai.ScoreResult`:
 
@@ -112,9 +71,7 @@ The answer is a `tai.ScoreResult`:
 | `level()` | `usize` or `enum` | The single most probable level |
 | `probability(level)` | `f64` | Probability of one level |
 
-```zig
-if (r.answers.frustration.level() == .angry) offerRefund();
-```
+An enum type works here too: its tag names are sent as the level descriptions.
 
 # State and instructions
 
@@ -122,18 +79,7 @@ if (r.answers.frustration.level() == .angry) offerRefund();
 serialize, so you can pass records straight in. Refer to fields by name in
 backticks:
 
-```zig
-const r = try client.ask(.{
-    .customer = .{ .plan = "pro", .months = 18 },
-    .message = message,
-}, .{
-    .churn_risk = tai.noul("Is `customer` likely to cancel based on `message`?"),
-    .duplicate = tai.noul(.{
-        .question = "Is `message` about the same issue as `previous`?",
-        .previous = previous_ticket,
-    }),
-}, .{});
-```
+[]($code.siteAsset('snippets/structured-state.zig').language('zig'))
 
 A plain string is sent as text. Everything else is serialized as JSON. Values
 can be comptime or runtime; only the *shape* (option names, number of levels)
@@ -142,34 +88,16 @@ has to be known at compile time.
 # Reusing a set of questions
 
 A question set is an ordinary value, so you can declare it once and ask it about
-many states:
+many states. `tai.Result(@TypeOf(set))` names the result type, and
+`tai.Answers(@TypeOf(set))` names just the answers.
 
-```zig
-const triage = .{
-    .is_urgent = tai.noul("Does this convey urgency?"),
-    .department = tai.choice("Which team?", .{ .billing = null, .technical = null }),
-};
+[]($code.siteAsset('snippets/reuse.zig').language('zig'))
 
-for (tickets) |t| {
-    const r = try client.ask(t.body, triage, .{});
-    ...
-}
-```
-
-Name the result type with `tai.Result(@TypeOf(triage))`, or the answers alone
-with `tai.Answers(@TypeOf(triage))`.
-
-# Per-call options
+# [Per-call options]($heading.id('per-call-options'))
 
 The last argument to `ask` is a `tai.Client.CallOptions`:
 
-```zig
-const r = try client.ask(state, questions, .{
-    .model = "jev-1.13.0",          // pin a version instead of the alias
-    .retry = .none,                 // or a custom tai.RetryPolicy
-    .diagnostics = &diag,           // see Client & errors
-});
-```
+[]($code.siteAsset('snippets/call-options.zig').language('zig'))
 
 Pin a versioned model if you've tuned confidence thresholds against it: the
 `jev-latest` alias moves when a new release ships.

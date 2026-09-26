@@ -17,3 +17,16 @@ jobs:
       - uses: mlugg/setup-zig@v2
       - run: zig build test --summary all
       - run: zig build examples
+
+  # Runs every documented example against the live API. Skipped when the
+  # TYPESAFE_API_KEY repository secret is not set (e.g. on forks).
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+      - if: env.TYPESAFE_API_KEY != ''
+        run: zig build e2e --summary all

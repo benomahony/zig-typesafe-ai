@@ -7,17 +7,10 @@
 
 # Creating a client
 
-```zig
-var client: tai.Client = try .init(gpa, io, .{
-    .api_key = "...",                     // or TYPESAFE_API_KEY
-    .base_url = "https://api.typesafe.ai", // or TYPESAFE_BASE_URL
-    .model = "jev-latest",                 // or TYPESAFE_DEFAULT_MODEL
-    .retry = .{},                          // tai.RetryPolicy
-    .extra_headers = &.{},                 // sent with every request
-    .environ_map = init.environ_map,       // where to read the variables above
-});
-defer client.deinit();
-```
+The quick start reads everything from the environment with
+`.environ_map = init.environ_map`. You can also set every option explicitly:
+
+[]($code.siteAsset('snippets/client-init.zig').language('zig'))
 
 Explicit options take precedence over environment variables, and environment
 variables take precedence over the defaults. Empty or whitespace-only
@@ -49,31 +42,18 @@ match the official Python and JavaScript SDKs:
 | `retry_connection_errors` | `true` | Retry when the server can't be reached |
 | `retry_status` | 408, 429, 5xx | Function deciding which statuses to retry |
 
-`429 Too Many Requests` and `529 Overloaded` are retried by default. Override
-the policy per client or per call:
-
-```zig
-const r = try client.ask(state, questions, .{ .retry = .none });
-```
+`429 Too Many Requests` and `529 Overloaded` are retried by default. Set the
+policy on the client, as above, or per call with `.retry` (see
+[per-call options]($link.page('dsl').ref('per-call-options'))). Use
+`tai.RetryPolicy.none` to disable retries.
 
 # Errors
 
 Zig errors can't carry a payload, so `tai` returns a precise error and puts the
-details in an optional `Diagnostics` value:
+details in an optional `Diagnostics` value. This example is tested with an
+invalid API key:
 
-```zig
-var diag: tai.Client.Diagnostics = .{};
-defer diag.deinit();
-
-const r = client.ask(state, questions, .{ .diagnostics = &diag }) catch |err| switch (err) {
-    error.Unauthorized => return error.BadApiKey,
-    error.UnprocessableEntity => {
-        std.log.err("request rejected: {s}", .{diag.body});
-        return err;
-    },
-    else => return err,
-};
-```
+[]($code.siteAsset('snippets/errors.zig').language('zig'))
 
 | Error | Cause |
 | --- | --- |
@@ -99,20 +79,15 @@ const r = client.ask(state, questions, .{ .diagnostics = &diag }) catch |err| sw
 - `attempts`: how many attempts were made, including the first.
 - `transport_error`: the underlying error behind `ConnectionFailed`.
 
+Call `deinit` on it when you're done, since it owns a copy of the body.
+
 # Listing models
 
-```zig
-var models = try client.listModels(.{});
-defer models.deinit();
-
-for (models.value.models) |m| {
-    std.debug.print("{s} {s} {s}\n", .{ m.name, m.release_date, m.description });
-}
-```
-
-This calls `GET /v1/models`, which lists the aliases your account can use.
-Versioned ids such as `jev-1.13.0` are accepted in `model` whether or not
+`listModels` calls `GET /v1/models`, which lists the aliases your account can
+use. Versioned ids such as `jev-1.13.0` are accepted in `model` whether or not
 they're listed.
+
+[]($code.siteAsset('snippets/list-models.zig').language('zig'))
 
 # Timeouts
 

@@ -3,6 +3,7 @@
 A Zig SDK for the [TypeSafe System One API](https://docs.typesafe.ai/api).
 Ask typed questions and get answers the compiler understands.
 
+<!-- snippet: triage -->
 ```zig
 const r = try client.ask("Help! My payouts have been failing for 3 days.", .{
     .is_urgent = tai.noul("Does this convey urgency?"),
@@ -14,13 +15,12 @@ const r = try client.ask("Help! My payouts have been failing for 3 days.", .{
     .frustration = tai.score("How frustrated is the customer?", .{ "Calm", "Frustrated", "Very angry" }),
 }, .{});
 
-if (r.answers.is_urgent > 0.8) page(oncall);
-
-switch (r.answers.department.choice) { // a real enum, checked for exhaustiveness
-    .billing => route(billing),
-    .technical => route(engineering),
-    .sales => route(sales),
-}
+const page_oncall = r.answers.is_urgent > 0.8;
+const queue = switch (r.answers.department.choice) {
+    .billing => "payments",
+    .technical => "engineering",
+    .sales => "sales",
+};
 ```
 
 - **Typed DSL**: question sets are struct literals. Choice options become
@@ -45,14 +45,17 @@ Requires Zig `0.17.0-dev.947` or later.
 zig fetch --save git+https://github.com/benomahony/zig-typesafe-ai
 ```
 
+Then, in `build.zig`:
+
+<!-- snippet: install-build -->
 ```zig
-// build.zig
 const tai = b.dependency("tai", .{ .target = target, .optimize = optimize });
 exe.root_module.addImport("tai", tai.module("tai"));
 ```
 
 ## Quick start
 
+<!-- snippet: quickstart -->
 ```zig
 const std = @import("std");
 const tai = @import("tai");

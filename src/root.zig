@@ -1,11 +1,7 @@
 //! tai: a Zig SDK for the TypeSafe System One API (https://docs.typesafe.ai/api).
 //!
+// snippet: triage
 //! ```zig
-//! const tai = @import("tai");
-//!
-//! var client: tai.Client = try .init(gpa, io, .{ .environ_map = init.environ_map });
-//! defer client.deinit();
-//!
 //! const r = try client.ask("Help! My payouts have been failing for 3 days.", .{
 //!     .is_urgent = tai.noul("Does this convey urgency?"),
 //!     .department = tai.choice("Which team should handle this?", .{
@@ -16,9 +12,12 @@
 //!     .frustration = tai.score("How frustrated is the customer?", .{ "Calm", "Frustrated", "Very angry" }),
 //! }, .{});
 //!
-//! switch (r.answers.department.choice) {
-//!     .billing => {}, .technical => {}, .sales => {},
-//! }
+//! const page_oncall = r.answers.is_urgent > 0.8;
+//! const queue = switch (r.answers.department.choice) {
+//!     .billing => "payments",
+//!     .technical => "engineering",
+//!     .sales => "sales",
+//! };
 //! ```
 
 const std = @import("std");

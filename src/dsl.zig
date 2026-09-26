@@ -3,20 +3,24 @@
 //! Declare questions as a struct literal and get back a struct with one field
 //! per question, typed by the question:
 //!
+// snippet: triage
 //! ```zig
 //! const r = try client.ask("Help! My payouts have been failing for 3 days.", .{
 //!     .is_urgent = tai.noul("Does this convey urgency?"),
 //!     .department = tai.choice("Which team should handle this?", .{
 //!         .billing = "Payments, invoicing, refunds",
 //!         .technical = "Bugs, outages, integrations",
-//!         .sales = null,
+//!         .sales = "Pricing, upgrades, new accounts",
 //!     }),
 //!     .frustration = tai.score("How frustrated is the customer?", .{ "Calm", "Frustrated", "Very angry" }),
 //! }, .{});
 //!
-//! r.answers.is_urgent            // f64
-//! r.answers.department.choice    // enum { billing, technical, sales }
-//! r.answers.frustration.level()  // usize
+//! const page_oncall = r.answers.is_urgent > 0.8;
+//! const queue = switch (r.answers.department.choice) {
+//!     .billing => "payments",
+//!     .technical => "engineering",
+//!     .sales => "sales",
+//! };
 //! ```
 //!
 //! Choice options and score levels are known at compile time, so option

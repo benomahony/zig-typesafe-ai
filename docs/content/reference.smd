@@ -1,27 +1,54 @@
 ---
 .title = "Reference",
-.description = "Generated API docs, examples and how tai maps to the HTTP API.",
+.description = "Generated API docs, how the examples are tested, and how tai maps to the HTTP API.",
 .date = .date("2026-09-26T00:00:01"),
 .layout = "page.shtml",
 ---
 
 # Generated API docs
 
-The [generated API reference](https://benomahony.github.io/zig-typesafe-ai/api/) lists every public
-declaration with its doc comment. To build it locally with Zig's autodoc:
+The [generated API reference](https://benomahony.github.io/zig-typesafe-ai/api/)
+lists every public declaration with its doc comment. To build it locally with
+Zig's autodoc:
 
 ```sh
 zig build docs
 python3 -m http.server -d zig-out/docs/api
 ```
 
+# How the examples are tested
+
+Every Zig example in these docs, the README and the doc comments is quoted from
+a region of a test, marked like this:
+
+```
+// docs:start NAME
+...
+// docs:end NAME
+```
+
+| Command | What it does |
+| --- | --- |
+| `zig build test` | Offline: unit tests, compiles the e2e tests and the consumer project, and fails if any snippet is stale or any Zig code in the docs isn't quoted from a test |
+| `TYPESAFE_API_KEY=... zig build e2e` | Runs the e2e tests and the quick start against the live API |
+| `zig build snippets` | Re-extracts the snippets after you edit a test |
+
+The snippets come from:
+
+- `tests/e2e.zig`: end-to-end tests. Assertions sit outside the quoted
+  regions, and check ranges and unambiguous cases rather than exact model
+  output.
+- `tests/consumer/`: a downstream project that depends on `tai` by path.
+  Its `build.zig` is the install example, and its `main.zig` is the quick start.
+
 # Examples
 
-The `examples/` directory contains three programs. Each needs `TYPESAFE_API_KEY`.
+The `examples/` directory contains three runnable programs. Each needs
+`TYPESAFE_API_KEY`.
 
 | Command | Shows |
 | --- | --- |
-| `zig build run-triage -- "message"` | The typed DSL: noul with criteria, choice from a struct and from an enum, score, and `Diagnostics` |
+| `zig build run-triage -- "message"` | The typed DSL end to end |
 | `zig build run-dynamic -- "text" label...` | Runtime-built questions with `systemOne` |
 | `zig build run-models` | `listModels` |
 
@@ -39,14 +66,3 @@ The `examples/` directory contains three programs. Each needs `TYPESAFE_API_KEY`
 | score `criteria` array | Tuple, struct literal, or enum type |
 | `answers.{id}` | `r.answers.{field}` or `Response.get(id)` |
 | `usage` | `r.usage` |
-
-# Running the tests
-
-```sh
-zig build test
-```
-
-The suite includes unit tests for serialization and parsing, plus tests
-against a local mock HTTP server. Those cover retries, `Retry-After`, error
-statuses, headers and connection failures, and need no network access or API
-key.

@@ -1,0 +1,10 @@
+.{
+    .name = .tai_consumer,
+    .version = "0.0.0",
+    .fingerprint = 0x58a37c4f0e7fd281,
+    .minimum_zig_version = "0.17.0-dev.947+36069a2a7",
+    .dependencies = .{
+        .tai = .{ .path = "../.." },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
