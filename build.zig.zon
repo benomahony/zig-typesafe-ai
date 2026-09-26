@@ -1,0 +1,13 @@
+.{
+    .name = .tai,
+    .version = "0.1.0",
+    .fingerprint = 0xe4319a84559fb389,
+    .minimum_zig_version = "0.17.0-dev.947+36069a2a7",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "README.md",
+    },
+}

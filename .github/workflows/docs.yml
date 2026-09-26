@@ -1,0 +1,53 @@
+name: Docs
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: mlugg/setup-zig@v2
+
+      # kristoff-it/setup-zine only looks for zine.ziggy in the repository root.
+      - name: Install Zine
+        run: |
+          version=$(sed -n 's/.*\.zine_version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' docs/zine.ziggy)
+          curl -sSfL "https://github.com/kristoff-it/zine/releases/download/v$version/x86_64-linux-musl.tar.xz" | tar -xJ -C /usr/local/bin zine
+
+      - name: Build site
+        working-directory: docs
+        run: zine release
+
+      - name: Build API reference
+        run: |
+          zig build docs
+          cp -R zig-out/docs/api docs/public/api
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/public
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

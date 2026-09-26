@@ -1,0 +1,122 @@
+---
+.title = "Client & errors",
+.description = "Configuration, environment variables, retries, error handling and listing models.",
+.date = .date("2026-09-26T00:00:03"),
+.layout = "page.shtml",
+---
+
+# Creating a client
+
+```zig
+var client: tai.Client = try .init(gpa, io, .{
+    .api_key = "...",                     // or TYPESAFE_API_KEY
+    .base_url = "https://api.typesafe.ai", // or TYPESAFE_BASE_URL
+    .model = "jev-latest",                 // or TYPESAFE_DEFAULT_MODEL
+    .retry = .{},                          // tai.RetryPolicy
+    .extra_headers = &.{},                 // sent with every request
+    .environ_map = init.environ_map,       // where to read the variables above
+});
+defer client.deinit();
+```
+
+Explicit options take precedence over environment variables, and environment
+variables take precedence over the defaults. Empty or whitespace-only
+environment values are ignored. `init` returns `error.MissingApiKey` if no key
+is found.
+
+| Variable | Default |
+| --- | --- |
+| `TYPESAFE_API_KEY` | none, required |
+| `TYPESAFE_BASE_URL` | `https://api.typesafe.ai` |
+| `TYPESAFE_DEFAULT_MODEL` | `jev-latest` |
+
+The client wraps a `std.http.Client`, so connections are pooled and reused.
+Requests can be issued from multiple threads.
+
+# Retries
+
+Failed requests are retried with exponential backoff and jitter. The defaults
+match the official Python and JavaScript SDKs:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `max_retries` | `2` | Retries after the first attempt; `0` disables |
+| `backoff_initial_ms` | `500` | First delay, doubled each retry |
+| `backoff_max_ms` | `5000` | Cap on the backoff delay |
+| `backoff_jitter` | `0.25` | Fraction of each delay randomly subtracted |
+| `respect_retry_after` | `true` | Honor `Retry-After` / `retry-after-ms` |
+| `max_retry_after_ms` | `60000` | Longer server delays fall back to backoff |
+| `retry_connection_errors` | `true` | Retry when the server can't be reached |
+| `retry_status` | 408, 429, 5xx | Function deciding which statuses to retry |
+
+`429 Too Many Requests` and `529 Overloaded` are retried by default. Override
+the policy per client or per call:
+
+```zig
+const r = try client.ask(state, questions, .{ .retry = .none });
+```
+
+# Errors
+
+Zig errors can't carry a payload, so `tai` returns a precise error and puts the
+details in an optional `Diagnostics` value:
+
+```zig
+var diag: tai.Client.Diagnostics = .{};
+defer diag.deinit();
+
+const r = client.ask(state, questions, .{ .diagnostics = &diag }) catch |err| switch (err) {
+    error.Unauthorized => return error.BadApiKey,
+    error.UnprocessableEntity => {
+        std.log.err("request rejected: {s}", .{diag.body});
+        return err;
+    },
+    else => return err,
+};
+```
+
+| Error | Cause |
+| --- | --- |
+| `BadRequest` | HTTP 400 |
+| `Unauthorized` | HTTP 401: missing or invalid API key |
+| `PermissionDenied` | HTTP 403 |
+| `NotFound` | HTTP 404 |
+| `RequestTimeout` | HTTP 408, after retries |
+| `UnprocessableEntity` | HTTP 422: the body failed validation |
+| `RateLimited` | HTTP 429, after retries |
+| `Overloaded` | HTTP 529, after retries |
+| `ServerError` | Other 5xx, after retries |
+| `UnexpectedStatus` | Any other non-2xx status |
+| `ConnectionFailed` | Couldn't connect, or the connection dropped |
+| `InvalidBaseUrl` | `base_url` isn't an http(s) URL with a host |
+| `InvalidResponse` | The body didn't match the documented shape, or an answer didn't match its question |
+| `NoQuestions`, `DuplicateQuestionName`, ... | Client-side validation for runtime-built requests |
+
+`Diagnostics` records:
+
+- `status`: the last HTTP status, if a response arrived.
+- `body`: the last non-2xx body, usually JSON such as `{"detail": {...}}`.
+- `attempts`: how many attempts were made, including the first.
+- `transport_error`: the underlying error behind `ConnectionFailed`.
+
+# Listing models
+
+```zig
+var models = try client.listModels(.{});
+defer models.deinit();
+
+for (models.value.models) |m| {
+    std.debug.print("{s} {s} {s}\n", .{ m.name, m.release_date, m.description });
+}
+```
+
+This calls `GET /v1/models`, which lists the aliases your account can use.
+Versioned ids such as `jev-1.13.0` are accepted in `model` whether or not
+they're listed.
+
+# Timeouts
+
+`std.http.Client` doesn't support per-request timeouts yet. Because every call
+takes a `std.Io`, you can cancel it from outside. For example, run the call with
+`io.concurrent` and call `cancel` on the future after a deadline; the call then
+returns `error.Canceled`.

@@ -1,0 +1,19 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # Uses minimum_zig_version from build.zig.zon.
+      - uses: mlugg/setup-zig@v2
+      - run: zig build test --summary all
+      - run: zig build examples

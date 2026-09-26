@@ -1,0 +1,95 @@
+---
+.title = "tai",
+.description = "A Zig SDK for the TypeSafe System One API. Ask typed questions, get answers the compiler understands.",
+.date = .date("2026-09-26T00:00:00"),
+.layout = "index.shtml",
+---
+
+# What it does
+
+[TypeSafe](https://docs.typesafe.ai) models such as Jev answer *questions about
+state* with calibrated probabilities instead of generated text. There are three
+kinds of question:
+
+- **noul**: a yes/no question. The answer is the probability of yes.
+- **choice**: pick one option from a set you define.
+- **score**: rate against ordered levels you define.
+
+`tai` wraps the [HTTP API](https://docs.typesafe.ai/api) with a typed DSL.
+You describe your questions as a Zig struct literal, and `tai` works out the
+result type at compile time. Choice options become a real `enum`, so a
+`switch` on the answer is checked for exhaustiveness.
+
+```zig
+const r = try client.ask("Help! My payouts have been failing for 3 days.", .{
+    .is_urgent = tai.noul("Does this convey urgency?"),
+    .department = tai.choice("Which team should handle this?", .{
+        .billing = "Payments, invoicing, refunds",
+        .technical = "Bugs, outages, integrations",
+        .sales = "Pricing, upgrades, new accounts",
+    }),
+    .frustration = tai.score("How frustrated is the customer?", .{ "Calm", "Frustrated", "Very angry" }),
+}, .{});
+
+if (r.answers.is_urgent > 0.8) page(oncall);
+
+switch (r.answers.department.choice) {
+    .billing => route(billing),
+    .technical => route(engineering),
+    .sales => route(sales),
+}
+```
+
+# Install
+
+`tai` targets Zig `0.17.0-dev` and has no dependencies beyond the standard
+library.
+
+```sh
+zig fetch --save git+https://github.com/benomahony/zig-typesafe-ai
+```
+
+Then, in `build.zig`:
+
+```zig
+const tai = b.dependency("tai", .{ .target = target, .optimize = optimize });
+exe.root_module.addImport("tai", tai.module("tai"));
+```
+
+# Quick start
+
+Get an API key from TypeSafe and export it:
+
+```sh
+export TYPESAFE_API_KEY=...
+```
+
+```zig
+const std = @import("std");
+const tai = @import("tai");
+
+pub fn main(init: std.process.Init) !void {
+    var client: tai.Client = try .init(init.gpa, init.io, .{
+        .environ_map = init.environ_map,
+    });
+    defer client.deinit();
+
+    const r = try client.ask("I was charged twice. Please help.", .{
+        .billing = tai.noul("Is this about billing?"),
+    }, .{});
+
+    std.debug.print("billing: {d:.2} ({s})\n", .{ r.answers.billing, r.model() });
+}
+```
+
+`ask` returns a plain value that owns no heap memory, so there is nothing to
+free.
+
+# Where next
+
+- [Typed questions]($link.page('dsl')) covers the full DSL: criteria, enums,
+  structured state and the result types.
+- [Client & errors]($link.page('client')) covers configuration, retries,
+  error handling and listing models.
+- [Runtime questions]($link.page('dynamic')) is for when the set of questions
+  isn't known until runtime.

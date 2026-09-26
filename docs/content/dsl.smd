@@ -1,0 +1,175 @@
+---
+.title = "Typed questions",
+.description = "Declare questions as a struct literal. The compiler derives a result struct with one typed field per question.",
+.date = .date("2026-09-26T00:00:04"),
+.layout = "page.shtml",
+---
+
+# Shape of a call
+
+```zig
+const r = try client.ask(state, .{
+    .field_name = tai.noul(...) | tai.choice(...) | tai.score(...),
+    ...
+}, .{});
+
+r.answers.field_name   // typed by the question
+r.usage                // input_tokens, output_tokens
+r.model()              // e.g. "jev-1.13.0"
+```
+
+Each field name becomes the question id sent to the API. Because field names
+are unique by construction, you can't send duplicate ids.
+
+# `tai.noul`: yes/no
+
+```zig
+.is_urgent = tai.noul("Does this convey urgency?"),
+```
+
+The answer is an `f64` from 0 (no) to 1 (yes):
+
+```zig
+if (r.answers.is_urgent > 0.8) escalate();
+```
+
+Use `.criteria(yes, no)` to say what each end of the scale means:
+
+```zig
+.is_urgent = tai.noul("Does this convey urgency?")
+    .criteria("Explicitly time-sensitive", "No urgency expressed"),
+```
+
+# `tai.choice`: pick one option
+
+Pass a struct literal that maps each option to its description. Use `null`
+for an option that needs no description.
+
+```zig
+.department = tai.choice("Which team should handle this?", .{
+    .billing = "Payments, invoicing, refunds",
+    .technical = "Bugs, outages, integrations",
+    .sales = null,
+}),
+```
+
+`tai` generates an `enum { billing, technical, sales }` from the field names.
+The answer is a `tai.ChoiceResult` of that enum:
+
+| Field / method | Type | Meaning |
+| --- | --- | --- |
+| `choice` | `enum` | The highest-probability option |
+| `probabilities` | `std.EnumArray(E, f64)` | Every option's probability |
+| `confidence` | `f64` | How certain the model is ([Confidence](https://docs.typesafe.ai/confidence)) |
+| `probability(option)` | `f64` | Shorthand for `probabilities.get(option)` |
+
+```zig
+switch (r.answers.department.choice) {
+    .billing => ...,
+    .technical => ...,
+    .sales => ...,
+}
+const p_sales = r.answers.department.probability(.sales);
+```
+
+If you already have an enum, pass the type itself. Each option is sent with a
+`null` description.
+
+```zig
+const Severity = enum { low, medium, high, critical };
+
+.severity = tai.choice("How severe is this?", Severity),
+// r.answers.severity.choice is a Severity
+```
+
+A choice must have between 1 and 255 options, and the compiler enforces that.
+
+# `tai.score`: rate against levels
+
+Pass a tuple of ordered level descriptions (2 to 10 levels):
+
+```zig
+.frustration = tai.score("How frustrated is the customer?", .{ "Calm", "Frustrated", "Very angry" }),
+```
+
+or name the levels with a struct literal, so the answer is an enum:
+
+```zig
+.frustration = tai.score("How frustrated is the customer?", .{
+    .calm = "Calm",
+    .frustrated = "Frustrated",
+    .angry = "Very angry",
+}),
+```
+
+The answer is a `tai.ScoreResult`:
+
+| Field / method | Type | Meaning |
+| --- | --- | --- |
+| `score` | `f64` | Probability-weighted level; can land between levels (e.g. `1.05`) |
+| `probabilities` | `[N]f64` | Probability of each level, by index |
+| `confidence` | `f64` | How certain the model is |
+| `level()` | `usize` or `enum` | The single most probable level |
+| `probability(level)` | `f64` | Probability of one level |
+
+```zig
+if (r.answers.frustration.level() == .angry) offerRefund();
+```
+
+# State and instructions
+
+`state`, instructions and descriptions accept any value that `std.json` can
+serialize, so you can pass records straight in. Refer to fields by name in
+backticks:
+
+```zig
+const r = try client.ask(.{
+    .customer = .{ .plan = "pro", .months = 18 },
+    .message = message,
+}, .{
+    .churn_risk = tai.noul("Is `customer` likely to cancel based on `message`?"),
+    .duplicate = tai.noul(.{
+        .question = "Is `message` about the same issue as `previous`?",
+        .previous = previous_ticket,
+    }),
+}, .{});
+```
+
+A plain string is sent as text. Everything else is serialized as JSON. Values
+can be comptime or runtime; only the *shape* (option names, number of levels)
+has to be known at compile time.
+
+# Reusing a set of questions
+
+A question set is an ordinary value, so you can declare it once and ask it about
+many states:
+
+```zig
+const triage = .{
+    .is_urgent = tai.noul("Does this convey urgency?"),
+    .department = tai.choice("Which team?", .{ .billing = null, .technical = null }),
+};
+
+for (tickets) |t| {
+    const r = try client.ask(t.body, triage, .{});
+    ...
+}
+```
+
+Name the result type with `tai.Result(@TypeOf(triage))`, or the answers alone
+with `tai.Answers(@TypeOf(triage))`.
+
+# Per-call options
+
+The last argument to `ask` is a `tai.Client.CallOptions`:
+
+```zig
+const r = try client.ask(state, questions, .{
+    .model = "jev-1.13.0",          // pin a version instead of the alias
+    .retry = .none,                 // or a custom tai.RetryPolicy
+    .diagnostics = &diag,           // see Client & errors
+});
+```
+
+Pin a versioned model if you've tuned confidence thresholds against it: the
+`jev-latest` alias moves when a new release ships.

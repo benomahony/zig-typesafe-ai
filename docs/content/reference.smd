@@ -1,0 +1,52 @@
+---
+.title = "Reference",
+.description = "Generated API docs, examples and how tai maps to the HTTP API.",
+.date = .date("2026-09-26T00:00:01"),
+.layout = "page.shtml",
+---
+
+# Generated API docs
+
+The [generated API reference](https://benomahony.github.io/zig-typesafe-ai/api/) lists every public
+declaration with its doc comment. To build it locally with Zig's autodoc:
+
+```sh
+zig build docs
+python3 -m http.server -d zig-out/docs/api
+```
+
+# Examples
+
+The `examples/` directory contains three programs. Each needs `TYPESAFE_API_KEY`.
+
+| Command | Shows |
+| --- | --- |
+| `zig build run-triage -- "message"` | The typed DSL: noul with criteria, choice from a struct and from an enum, score, and `Diagnostics` |
+| `zig build run-dynamic -- "text" label...` | Runtime-built questions with `systemOne` |
+| `zig build run-models` | `listModels` |
+
+# Mapping to the HTTP API
+
+| HTTP | tai |
+| --- | --- |
+| `POST /v1/systemone` | `Client.ask` (typed) and `Client.systemOne` (runtime) |
+| `GET /v1/models` | `Client.listModels` |
+| `Authorization: Bearer` | `Options.api_key` / `TYPESAFE_API_KEY` |
+| `state` | The first argument of `ask`, or `Request.state` |
+| `questions.{id}` | A struct field name, or `NamedQuestion.name` |
+| noul `criteria.true` / `.false` | `.criteria(yes, no)` |
+| choice `criteria` map | Struct literal or enum type |
+| score `criteria` array | Tuple, struct literal, or enum type |
+| `answers.{id}` | `r.answers.{field}` or `Response.get(id)` |
+| `usage` | `r.usage` |
+
+# Running the tests
+
+```sh
+zig build test
+```
+
+The suite includes unit tests for serialization and parsing, plus tests
+against a local mock HTTP server. Those cover retries, `Retry-After`, error
+statuses, headers and connection failures, and need no network access or API
+key.
